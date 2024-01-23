@@ -35,7 +35,6 @@ def solver_kernel(name, values, costs, capacity, upperbound):
     opt = linprog(c=obj, A_ub=lhs_ineq, b_ub=capacity, bounds=bnd,integrality=ones_array,method="highs")
 
     # 打印结果
-
     if(opt.success == True):
         df2 = pd.DataFrame({'潜力名称': name, '选取数量': opt.x.astype(int)})
         condition = df2['选取数量'] > 0
@@ -47,11 +46,12 @@ def solver_kernel(name, values, costs, capacity, upperbound):
             table.add_row(row)
 
         # 打印PrettyTable对象
-        print("PP容量为" + str(capacity) + "的潜力自动填充方案:")
-        print(table)
-        print()
-        # 将约束变量作为结果返回.用于计算库存减少
-        return opt.x.astype(int), (int)(opt.fun)
+        # print("PP容量为" + str(capacity) + "的潜力自动填充方案:")
+        # print(table)
+        # print()
+
+        # 返回三个结果: 约束变量 最优值 一个表格
+        return opt.x.astype(int), (int)(opt.fun), table
 
 
 # 该函数需要完成连续三次调用
@@ -66,8 +66,6 @@ def auto_fill(df):
     P_Skill_Limit = df.iloc[:, 3].dropna().astype(int).to_numpy()
     P_Skill_Stock = df.iloc[:, 4].dropna().astype(int).to_numpy()
 
-
-
     # 约束条件2:选取数量必须小于等于每个首饰内的使用次数
     # 约束条件3:选取数量必须小于等于剩余库存
     # 这两个条件不涉及到约束变量的系数,因此将其作为边界条件设置
@@ -79,20 +77,46 @@ def auto_fill(df):
     Accessories_all_permutations = list(permutations(Accessories_PP_capacity))
     # 使用 set 去除重复项
     Accessories_unique_permutations = set(Accessories_all_permutations)
-    # 打印去除重复项后的排列
+    
+    # 创建若干临时变量用于保存最大效能的结果
+    best_result_max_value = 0
+    best_result_teble_result_first_fill = None
+    best_result_teble_result_second_fill = None
+    best_result_teble_result_third_fill = None
+    best_result_permutations = None
+
+    # 遍历每一个排列,按照顺序调用线性规划过程
     for unique_permutation in Accessories_unique_permutations:
-        print("||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
-        print("当前饰品填充顺序: " + str(unique_permutation))
+        # print("||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
+        # print("当前饰品填充顺序: " + str(unique_permutation))
         # 连续调用三次函数
-        result_first_fill, value_first_fill = solver_kernel(P_Skill_names, P_Skill_Values,P_Skill_PP_Costs,unique_permutation[0],P_Skill_available)
-        P_Skill_available_after_first_fill = np.minimum(P_Skill_Limit, P_Skill_Stock - result_first_fill)
+        x1, v1, t1 = solver_kernel(P_Skill_names, P_Skill_Values,P_Skill_PP_Costs,unique_permutation[0],P_Skill_available)
+        P_Skill_available_after_first_fill = np.minimum(P_Skill_Limit, P_Skill_Stock - x1)
         # print(result_first_fill)
-        result_second_fill, value_second_fill = solver_kernel(P_Skill_names, P_Skill_Values,P_Skill_PP_Costs,unique_permutation[1],P_Skill_available_after_first_fill)
-        P_Skill_available_after_second_fill = np.minimum(P_Skill_Limit, P_Skill_Stock - result_first_fill - result_second_fill)
+        x2, v2, t2 = solver_kernel(P_Skill_names, P_Skill_Values,P_Skill_PP_Costs,unique_permutation[1],P_Skill_available_after_first_fill)
+        P_Skill_available_after_second_fill = np.minimum(P_Skill_Limit, P_Skill_Stock - x1 - x2)
         # print(result_second_fill)
-        result_thrid_fill, value_thrid_fill = solver_kernel(P_Skill_names, P_Skill_Values,P_Skill_PP_Costs,unique_permutation[2],P_Skill_available_after_second_fill)
-        total_value = value_first_fill + value_second_fill + value_thrid_fill
-        print("潜力填充方案得到的总效能为:" + str(-1 * total_value) + "%")
+        x3, v3, t3 = solver_kernel(P_Skill_names, P_Skill_Values,P_Skill_PP_Costs,unique_permutation[2],P_Skill_available_after_second_fill)
+        total_value = v1 + v2 + v3
+
+        # 对比总效能,记录最好方案的对应信息
+        if(total_value < best_result_max_value):
+            best_result_max_value = total_value
+            best_result_teble_result_first_fill = t1
+            best_result_teble_result_second_fill = t2
+            best_result_teble_result_third_fill = t3            
+            best_result_permutations = unique_permutation
+
+    # 输出这个最好方案
+    print("PP容量为" + str(best_result_permutations[0]) + "的潜力自动填充方案:")
+    print(best_result_teble_result_first_fill)
+    print("PP容量为" + str(best_result_permutations[1]) + "的潜力自动填充方案:")
+    print(best_result_teble_result_second_fill)
+    print("PP容量为" + str(best_result_permutations[2]) + "的潜力自动填充方案:")
+    print(best_result_teble_result_third_fill)
+    print("潜力填充方案得到的总效能为:" + str(-1 * best_result_max_value) + "%")
+
+
 auto_fill(df)
 
     
